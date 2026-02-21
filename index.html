@@ -44,7 +44,8 @@ button{cursor:pointer;border:none;background:none}
 .btn-small{background:#F0EDE6;color:#3D405B;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600}
 .btn-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:none;border:none}
 .btn-icon:active{background:#F0EDE6}
-.btn-tiny{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:none;border:none}
+.btn-tiny{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:none;border:none;touch-action:manipulation}
+.btn-tiny svg,.btn-icon svg{pointer-events:none}
 
 /* Tags */
 .tag{display:inline-block;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:600;background:#F0EDE6;color:#81B29A;margin:2px}
@@ -125,7 +126,7 @@ button{cursor:pointer;border:none;background:none}
 
 /* Autocomplete */
 .autocomplete{position:absolute;left:0;right:0;background:#fff;border:2px solid #ede8e0;border-top:none;border-radius:0 0 12px 12px;max-height:180px;overflow-y:auto;z-index:10}
-.ac-item{padding:10px 14px;font-size:14px;cursor:pointer;display:flex;justify-content:space-between}
+.ac-item{padding:10px 14px;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;touch-action:manipulation}
 .ac-item:active{background:#F0EDE6}
 .ac-cat{font-size:11px;color:#bbb}
 
@@ -227,13 +228,13 @@ let state={
   cookingDays:load('wm-cookingdays',[0,1,2,3,4,5,6]),
   notification:null,
   // UI state
-  dishForm:null, // null or {id?,name,tags,ingredients}
+  dishForm:null,
   filterTag:null,
   dishSearch:'',
-  pickerDay:null, // index in menu days for dish picker
+  pickerDay:null,
   pickerSearch:'',
-  deleteTarget:null, // dish id to confirm delete
-  settingsSection:'main', // main | history
+  deleteTarget:null,
+  settingsSection:'main',
 };
 // First time? save defaults
 if(!localStorage.getItem('wm-dishes'))save('wm-dishes',DEFAULT_DISHES);
@@ -505,7 +506,7 @@ function renderDishes(){
         </div>
         <div class="dish-actions">
           <button class="btn-tiny" onclick="handleToggleActive('${d.id}')" title="${d.isActive?'Deactiveer':'Activeer'}" style="opacity:${d.isActive?1:.5}">${d.isActive?'✅':'⏸️'}</button>
-          <button class="btn-tiny" onclick="setState({dishForm:{id:'${d.id}',name:'${esc(d.name).replace(/'/g,"\\'")}',tags:${JSON.stringify(d.tags)},ingredients:${JSON.stringify(d.ingredients)}}})">${icon('edit',16,'#81B29A')}</button>
+          <button class="btn-tiny" onclick="editDish('${d.id}')">${icon('edit',16,'#81B29A')}</button>
           <button class="btn-tiny" onclick="setState({deleteTarget:'${d.id}'})">${icon('trash',16,'#E07A5F')}</button>
         </div>
       </div>`;
@@ -538,16 +539,38 @@ function renderDishForm(){
     });
     h+=`</div>`;
   }
-  h+=`<div style="display:flex;gap:8px">
-    <input class="input" id="df-ing" placeholder="Ingrediënt naam" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addDishIng();}">
-    <select class="select" id="df-cat" style="width:120px">`;
+  // Autocomplete
+  const acQuery=(state.acQuery||'').toLowerCase().trim();
+  const knownIngs=(()=>{const map=new Map();state.dishes.forEach(d=>{d.ingredients.forEach(ing=>{const k=ing.name.toLowerCase().trim();if(!map.has(k))map.set(k,{name:ing.name,category:ing.category||'overig'});});});return[...map.values()];})();
+  const acSuggestions=acQuery.length>=1?knownIngs.filter(ki=>ki.name.toLowerCase().includes(acQuery)&&!f.ingredients.some(ei=>ei.name.toLowerCase()===ki.name.toLowerCase())).slice(0,5):[];
+
+  h+=`<div style="display:flex;gap:6px;align-items:flex-start">
+    <div style="flex:1;position:relative">
+      <input class="input" id="df-ing" placeholder="Ingrediënt" value="${esc(state.acQuery||'')}" oninput="state.acQuery=this.value;render()" onkeydown="if(event.key==='Enter'){event.preventDefault();addDishIng();}" autocomplete="off">`;
+  if(acSuggestions.length){
+    window._acCache=acSuggestions.map(s=>({name:s.name,category:s.category}));
+    h+=`<div class="autocomplete">`;
+    acSuggestions.forEach((s,si)=>{
+      h+=`<div class="ac-item" onpointerdown="event.preventDefault();selectAutoComplete(_acCache[${si}].name,_acCache[${si}].category)">${esc(s.name)}<span class="ac-cat">${esc(s.category)}</span></div>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`</div>
+    <select class="select" id="df-cat" style="width:68px;padding:10px 4px;font-size:11px">`;
   ING_CATS.forEach(c=>{h+=`<option value="${c}">${c}</option>`;});
   h+=`</select>
-    <button class="btn-small" onclick="addDishIng()" style="white-space:nowrap">+ Voeg toe</button>
+    <button onclick="addDishIng()" style="width:36px;height:36px;min-width:36px;border-radius:10px;background:#81B29A;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Voeg toe">${icon('plus',18,'#fff')}</button>
   </div>
   <button class="btn-secondary" onclick="handleSaveDish()" style="margin-top:16px">${icon('check',18,'#fff')} Opslaan</button>
   </div>`;
   return h;
+}
+
+// Edit dish by ID - safe approach without inline JSON
+function editDish(id){
+  const d=state.dishes.find(dd=>dd.id===id);
+  if(!d)return;
+  setState({dishForm:{id:d.id,name:d.name,tags:[...d.tags],ingredients:d.ingredients.map(ing=>({...ing}))}});
 }
 
 function toggleDishTag(tag){
@@ -559,9 +582,14 @@ function toggleDishTag(tag){
 function removeDishIng(i){state.dishForm.ingredients.splice(i,1);render();}
 function addDishIng(){
   const el=document.getElementById('df-ing');const cat=document.getElementById('df-cat');
-  if(!el||!el.value.trim())return;
-  state.dishForm.ingredients.push({name:el.value.trim(),category:cat?cat.value:'overig'});
-  el.value='';render();
+  const val=state.acQuery||'';
+  if(!val.trim())return;
+  state.dishForm.ingredients.push({name:val.trim(),category:cat?cat.value:'overig'});
+  state.acQuery='';render();
+}
+function selectAutoComplete(name,category){
+  state.dishForm.ingredients.push({name,category});
+  state.acQuery='';render();
 }
 
 function renderShopping(){
@@ -708,6 +736,12 @@ function renderModals(){
 
 // ─── Main Render ────────────────────────────────────────────────────────────
 function render(){
+  // Save focused element info before re-render
+  const activeId=document.activeElement?document.activeElement.id:null;
+  const activeTag=document.activeElement?document.activeElement.tagName:null;
+  let cursorPos=null;
+  if(activeId&&(activeTag==='INPUT'||activeTag==='TEXTAREA')){try{cursorPos=document.activeElement.selectionStart;}catch(e){}}
+
   const tabs=[
     {id:'home',icon:'home',label:'Menu'},
     {id:'dishes',icon:'dish',label:'Gerechten'},
@@ -737,6 +771,12 @@ function render(){
       </nav>
       ${renderModals()}
     </div>`;
+
+  // Restore focus and cursor position after re-render
+  if(activeId){
+    const el=document.getElementById(activeId);
+    if(el){el.focus();if(cursorPos!==null){try{el.setSelectionRange(cursorPos,cursorPos);}catch(e){}}}
+  }
 }
 
 // ─── Init ───────────────────────────────────────────────────────────────────
