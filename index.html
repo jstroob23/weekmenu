@@ -22,6 +22,11 @@ button{cursor:pointer;border:none;background:none}
 .header-week{font-size:13px;color:#999;font-weight:500}
 .main{flex:1;padding:0 16px 100px;overflow-y:auto}
 
+/* Sync indicator */
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#81B29A;flex-shrink:0;transition:background .3s}
+.sync-dot.syncing{background:#F2CC8F;animation:pulse 1s infinite}
+.sync-dot.error{background:#E07A5F}
+
 /* Nav */
 .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;justify-content:space-around;background:#fff;border-top:1px solid #ede8e0;padding:8px 0 max(8px, env(safe-area-inset-bottom));z-index:100}
 .nav-btn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 12px;border-radius:12px;transition:all .2s;background:none;border:none}
@@ -44,8 +49,7 @@ button{cursor:pointer;border:none;background:none}
 .btn-small{background:#F0EDE6;color:#3D405B;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600}
 .btn-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:none;border:none}
 .btn-icon:active{background:#F0EDE6}
-.btn-tiny{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:none;border:none;touch-action:manipulation}
-.btn-tiny svg,.btn-icon svg{pointer-events:none}
+.btn-tiny{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:none;border:none}
 
 /* Tags */
 .tag{display:inline-block;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:600;background:#F0EDE6;color:#81B29A;margin:2px}
@@ -124,12 +128,6 @@ button{cursor:pointer;border:none;background:none}
 .history-week{font-weight:700;color:#81B29A;margin-bottom:4px}
 .history-day{color:#666;padding:2px 0}
 
-/* Autocomplete */
-.autocomplete{position:absolute;left:0;right:0;background:#fff;border:2px solid #ede8e0;border-top:none;border-radius:0 0 12px 12px;max-height:180px;overflow-y:auto;z-index:10}
-.ac-item{padding:10px 14px;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;touch-action:manipulation}
-.ac-item:active{background:#F0EDE6}
-.ac-cat{font-size:11px;color:#bbb}
-
 /* Search bar */
 .search-bar{width:100%;padding:10px 14px 10px 36px;border:2px solid #ede8e0;border-radius:12px;font-size:14px;background:#fff;outline:none;margin-bottom:12px;transition:border-color .2s}
 .search-bar:focus{border-color:#81B29A}
@@ -159,8 +157,22 @@ button{cursor:pointer;border:none;background:none}
 </style>
 </head>
 <body>
-<div id="root"></div>
+
+<!-- Loading screen shown while Supabase loads -->
+<div id="root">
+  <div class="loading">
+    <div class="loading-emoji">🍳</div>
+    <div class="loading-text">Laden...</div>
+  </div>
+</div>
+
 <script>
+// ════════════════════════════════════════════════════════════════
+// SUPABASE CONFIG — vervang deze twee waarden met jouw project
+// ════════════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://abcdefgh.supabase.co
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbmhhenVuenR0c3J6d2FoYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MTA1MTEsImV4cCI6MjA4NzI4NjUxMX0.jbr6YfC8wRYAdspXAePTvTjaYWLWtKTEzY6KI5lBVKQ';       // de "anon public" key uit Supabase
+
 // ─── SVG Icons ──────────────────────────────────────────────────────────────
 const IC={
 home:'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10',
@@ -180,6 +192,7 @@ chevDown:'M6 9l6 6 6-6',
 history:'M12 8v4l3 3 M3.05 11a9 9 0 11.5 4m-.5-4H1l2-3 2 3H3.05',
 search:'M11 17.25a6.25 6.25 0 110-12.5 6.25 6.25 0 010 12.5z M16 16l4.5 4.5',
 pencil:'M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z',
+wifi:'M1.42 9a16 16 0 0121.16 0 M5 12.55a11 11 0 0114.08 0 M8.53 16.11a6 6 0 016.95 0 M12 20h.01',
 };
 function icon(name,size,color){size=size||20;color=color||'currentColor';return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${IC[name]||''}"/></svg>`;}
 
@@ -189,16 +202,6 @@ const DAYS_SHORT=["Ma","Di","Wo","Do","Vr","Za","Zo"];
 const TAG_OPTIONS=["pasta","rijst","aardappelen","frietjes","ovenschotel","soep","salade","brood","vis","vlees","veggie","aziatisch","mexicaans","simpel","feestelijk"];
 const ING_CATS=["groenten","fruit","vlees","vis","zuivel","droog","sauzen","kruiden","overig"];
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-const genId=()=>Math.random().toString(36).substring(2,10)+Date.now().toString(36);
-function getWeekNumber(d){const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dn=dt.getUTCDay()||7;dt.setUTCDate(dt.getUTCDate()+4-dn);const ys=new Date(Date.UTC(dt.getUTCFullYear(),0,1));return Math.ceil(((dt-ys)/86400000+1)/7);}
-function esc(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-
-// ─── Storage ────────────────────────────────────────────────────────────────
-function load(key,fb){try{const r=localStorage.getItem(key);return r?JSON.parse(r):fb;}catch(e){return fb;}}
-function save(key,data){try{localStorage.setItem(key,JSON.stringify(data));}catch(e){}}
-
-// ─── Default Dishes ─────────────────────────────────────────────────────────
 const DEFAULT_DISHES=[
 {id:"d01",name:"Spaghetti Bolognese",tags:["pasta","vlees"],ingredients:[{name:"spaghetti",category:"droog"},{name:"gehakt",category:"vlees"},{name:"tomatenpassata",category:"sauzen"},{name:"ui",category:"groenten"},{name:"knoflook",category:"groenten"},{name:"wortel",category:"groenten"},{name:"parmezaan",category:"zuivel"}],isActive:true,createdAt:"2026-01-15"},
 {id:"d02",name:"Kip Curry met Rijst",tags:["rijst","aziatisch"],ingredients:[{name:"kipfilet",category:"vlees"},{name:"rijst",category:"droog"},{name:"kokosmelk",category:"sauzen"},{name:"currypasta",category:"kruiden"},{name:"paprika",category:"groenten"},{name:"ui",category:"groenten"},{name:"sperziebonen",category:"groenten"}],isActive:true,createdAt:"2026-01-15"},
@@ -217,16 +220,78 @@ const DEFAULT_DISHES=[
 {id:"d15",name:"Pannenkoeken",tags:["simpel","veggie"],ingredients:[{name:"bloem",category:"droog"},{name:"ei",category:"zuivel"},{name:"melk",category:"zuivel"},{name:"boter",category:"zuivel"},{name:"stroop",category:"sauzen"},{name:"spek",category:"vlees"}],isActive:true,createdAt:"2026-01-15"},
 ];
 
+// ═══════════════════════════════════════════════════════════════
+// SUPABASE CLIENT — lichtgewicht fetch-gebaseerde client
+// (geen npm nodig, werkt rechtstreeks vanuit HTML)
+// ═══════════════════════════════════════════════════════════════
+const sb = {
+  _h(){ return {'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}; },
+
+  async select(table, match=null){
+    let url=`${SUPABASE_URL}/rest/v1/${table}?select=*`;
+    if(match)Object.entries(match).forEach(([k,v])=>url+=`&${k}=eq.${encodeURIComponent(v)}`);
+    const r=await fetch(url,{headers:{...this._h(),'Prefer':'return=representation'}});
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  },
+
+  async upsert(table, data){
+    const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}`,{
+      method:'POST',
+      headers:{...this._h(),'Prefer':'resolution=merge-duplicates,return=representation'},
+      body:JSON.stringify(data)
+    });
+    if(!r.ok)throw new Error(await r.text());
+    return r.json();
+  },
+
+  async delete(table, match){
+    let url=`${SUPABASE_URL}/rest/v1/${table}?`;
+    Object.entries(match).forEach(([k,v])=>url+=`${k}=eq.${encodeURIComponent(v)}&`);
+    const r=await fetch(url,{method:'DELETE',headers:this._h()});
+    if(!r.ok)throw new Error(await r.text());
+  },
+
+  // Realtime (Postgres WebSocket changes)
+  subscribe(table, cb){
+    const wsUrl=SUPABASE_URL.replace('https://','wss://').replace('http://','ws://')+'/realtime/v1/websocket?apikey='+SUPABASE_ANON+'&vsn=1.0.0';
+    let ws;
+    const connect=()=>{
+      ws=new WebSocket(wsUrl);
+      ws.onopen=()=>{
+        ws.send(JSON.stringify({topic:'realtime:public:'+table,event:'phx_join',payload:{config:{broadcast:{self:true},presence:{key:''},postgres_changes:[{event:'*',schema:'public',table}]}},ref:1}));
+      };
+      ws.onmessage=(e)=>{
+        const msg=JSON.parse(e.data);
+        if(msg.event==='postgres_changes'||msg.event==='*'){
+          if(msg.payload&&msg.payload.data)cb(msg.payload.data);
+        }
+        // heartbeat
+        if(msg.event==='heartbeat')ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:Date.now()}));
+      };
+      ws.onclose=()=>setTimeout(connect,3000);
+    };
+    connect();
+    return ()=>ws&&ws.close();
+  }
+};
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+const genId=()=>Math.random().toString(36).substring(2,10)+Date.now().toString(36);
+function getWeekNumber(d){const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dn=dt.getUTCDay()||7;dt.setUTCDate(dt.getUTCDate()+4-dn);const ys=new Date(Date.UTC(dt.getUTCFullYear(),0,1));return Math.ceil(((dt-ys)/86400000+1)/7);}
+function esc(s){if(s==null)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 // ─── State ──────────────────────────────────────────────────────────────────
 let state={
   tab:'home',
-  dishes:load('wm-dishes',DEFAULT_DISHES),
-  menus:load('wm-menus',[]),
-  dayPrefs:load('wm-prefs',[]),
-  shopping:load('wm-shopping',null),
-  tagLimits:load('wm-taglimits',[]),
-  cookingDays:load('wm-cookingdays',[0,1,2,3,4,5,6]),
+  dishes:[],
+  menus:[],
+  dayPrefs:[],
+  shopping:null,
+  tagLimits:[],
+  cookingDays:[0,1,2,3,4,5,6],
   notification:null,
+  syncStatus:'ok', // 'ok' | 'syncing' | 'error'
   // UI state
   dishForm:null,
   filterTag:null,
@@ -234,13 +299,134 @@ let state={
   pickerDay:null,
   pickerSearch:'',
   deleteTarget:null,
-  settingsSection:'main',
 };
-// First time? save defaults
-if(!localStorage.getItem('wm-dishes'))save('wm-dishes',DEFAULT_DISHES);
 
 function setState(patch){Object.assign(state,patch);render();}
 function notify(msg){state.notification=msg;render();setTimeout(()=>{state.notification=null;render();},2500);}
+
+// ═══════════════════════════════════════════════════════════════
+// SUPABASE DATA LAAG
+// Elke save-functie schrijft naar Supabase EN update local state
+// ═══════════════════════════════════════════════════════════════
+
+// Tabellen in Supabase:
+//   dishes     — { id text PK, data jsonb }
+//   app_state  — { key text PK, data jsonb }
+//      keys: 'menus', 'settings', 'shopping'
+
+async function dbSaveDishes(dishes){
+  setState({syncStatus:'syncing'});
+  try{
+    // Upsert alle gerechten als één rij (id='dishes_list')
+    await sb.upsert('app_state',[{key:'dishes',data:dishes}]);
+    setState({dishes,syncStatus:'ok'});
+  }catch(e){
+    console.error('Supabase save dishes error:',e);
+    setState({syncStatus:'error'});
+    notify('❌ Opslaan mislukt — check je verbinding');
+    throw e;
+  }
+}
+
+async function dbSaveMenus(menus){
+  setState({syncStatus:'syncing'});
+  try{
+    await sb.upsert('app_state',[{key:'menus',data:menus}]);
+    setState({menus,syncStatus:'ok'});
+  }catch(e){
+    console.error('Supabase save menus error:',e);
+    setState({syncStatus:'error'});
+    notify('❌ Opslaan mislukt');
+    throw e;
+  }
+}
+
+async function dbSaveSettings(settings){
+  setState({syncStatus:'syncing'});
+  try{
+    await sb.upsert('app_state',[{key:'settings',data:settings}]);
+    setState({...settings,syncStatus:'ok'});
+  }catch(e){
+    console.error('Supabase save settings error:',e);
+    setState({syncStatus:'error'});
+    notify('❌ Opslaan mislukt');
+    throw e;
+  }
+}
+
+async function dbSaveShopping(shopping){
+  setState({syncStatus:'syncing'});
+  try{
+    await sb.upsert('app_state',[{key:'shopping',data:shopping}]);
+    setState({shopping,syncStatus:'ok'});
+  }catch(e){
+    console.error('Supabase save shopping error:',e);
+    setState({syncStatus:'error'});
+    notify('❌ Opslaan mislukt');
+    throw e;
+  }
+}
+
+function getSettings(){
+  return{dayPrefs:state.dayPrefs,tagLimits:state.tagLimits,cookingDays:state.cookingDays};
+}
+
+// ─── Init: laad data van Supabase ────────────────────────────────────────────
+async function initApp(){
+  try{
+    // Haal alle app_state rijen op
+    const rows=await sb.select('app_state');
+    const byKey={};
+    rows.forEach(r=>byKey[r.key]=r.data);
+
+    const dishes  = byKey['dishes']  || DEFAULT_DISHES;
+    const menus   = byKey['menus']   || [];
+    const settings= byKey['settings']|| {dayPrefs:[],tagLimits:[],cookingDays:[0,1,2,3,4,5,6]};
+    const shopping= byKey['shopping']|| null;
+
+    // Als dit de eerste keer is (geen dishes in DB), schrijf defaults
+    if(!byKey['dishes']){
+      await sb.upsert('app_state',[{key:'dishes',data:DEFAULT_DISHES}]);
+    }
+
+    setState({
+      dishes,
+      menus,
+      dayPrefs:settings.dayPrefs||[],
+      tagLimits:settings.tagLimits||[],
+      cookingDays:settings.cookingDays||[0,1,2,3,4,5,6],
+      shopping,
+      syncStatus:'ok',
+    });
+
+    // Realtime: luister naar wijzigingen van andere gebruikers
+    sb.subscribe('app_state',(change)=>{
+      // Bij elke DB-wijziging, herlaad de betrokken data
+      if(change.new){
+        const {key,data}=change.new;
+        if(key==='dishes')    setState({dishes:data});
+        if(key==='menus')     setState({menus:data});
+        if(key==='shopping')  setState({shopping:data});
+        if(key==='settings')  setState({dayPrefs:data.dayPrefs||[],tagLimits:data.tagLimits||[],cookingDays:data.cookingDays||[0,1,2,3,4,5,6]});
+        notify('🔄 Data bijgewerkt door een andere gebruiker');
+      }
+    });
+
+  }catch(e){
+    console.error('Supabase init error:',e);
+    // Fallback naar localStorage als Supabase niet bereikbaar is
+    setState({
+      dishes:JSON.parse(localStorage.getItem('wm-dishes')||'null')||DEFAULT_DISHES,
+      menus:JSON.parse(localStorage.getItem('wm-menus')||'[]'),
+      dayPrefs:JSON.parse(localStorage.getItem('wm-prefs')||'[]'),
+      tagLimits:JSON.parse(localStorage.getItem('wm-taglimits')||'[]'),
+      cookingDays:JSON.parse(localStorage.getItem('wm-cookingdays')||JSON.stringify([0,1,2,3,4,5,6])),
+      shopping:JSON.parse(localStorage.getItem('wm-shopping')||'null'),
+      syncStatus:'error',
+    });
+    notify('⚠️ Offline modus — verbinding met database mislukt');
+  }
+}
 
 // ─── Menu Generation Algorithm ──────────────────────────────────────────────
 function generateWeekMenu(dishes,recentDishIds,dayPreferences,tagLimits,cookingDays){
@@ -273,27 +459,26 @@ function generateShoppingList(menu,dishes){
 }
 
 // ─── Event Handlers ─────────────────────────────────────────────────────────
-function handleGenerate(){
+async function handleGenerate(){
   const recentIds=[];
   state.menus.slice(-2).forEach(m=>m.days.forEach(d=>recentIds.push(d.dishId)));
   const menu=generateWeekMenu(state.dishes,recentIds,state.dayPrefs,state.tagLimits,state.cookingDays);
   if(!menu){notify('Voeg eerst gerechten toe!');return;}
   const menus=[...state.menus,menu];
-  save('wm-menus',menus);
-  setState({menus});
+  await dbSaveMenus(menus);
   notify('Nieuw menu gegenereerd! 🎲');
 }
 
-function handleConfirmMenu(){
+async function handleConfirmMenu(){
   const menus=state.menus.map((m,i)=>i===state.menus.length-1?{...m,confirmed:true}:m);
   const menu=menus[menus.length-1];
   const shopping=generateShoppingList(menu,state.dishes);
-  save('wm-menus',menus);save('wm-shopping',shopping);
-  setState({menus,shopping});
+  await dbSaveMenus(menus);
+  await dbSaveShopping(shopping);
   notify('Menu bevestigd! 🛒');
 }
 
-function handleRerollDay(dayIndex){
+async function handleRerollDay(dayIndex){
   const menu={...state.menus[state.menus.length-1]};
   const day=menu.days[dayIndex];
   const usedIds=menu.days.map(d=>d.dishId);
@@ -305,18 +490,18 @@ function handleRerollDay(dayIndex){
   const chosen=cands[Math.floor(Math.random()*cands.length)];
   menu.days=menu.days.map((d,i)=>i===dayIndex?{...d,dishId:chosen.id}:d);
   const menus=state.menus.map((m,i)=>i===state.menus.length-1?menu:m);
-  save('wm-menus',menus);setState({menus});
+  await dbSaveMenus(menus);
   notify('Nieuw gerecht! 🎲');
 }
 
-function handleToggleLock(dayIndex){
+async function handleToggleLock(dayIndex){
   const menu={...state.menus[state.menus.length-1]};
   menu.days=menu.days.map((d,i)=>i===dayIndex?{...d,isLocked:!d.isLocked}:d);
   const menus=state.menus.map((m,i)=>i===state.menus.length-1?menu:m);
-  save('wm-menus',menus);setState({menus});
+  await dbSaveMenus(menus);
 }
 
-function handleRegenerateKeepLocked(){
+async function handleRegenerateKeepLocked(){
   const old=state.menus[state.menus.length-1];
   const recentIds=[];state.menus.slice(-2).forEach(m=>m.days.forEach(d=>recentIds.push(d.dishId)));
   const locked=old.days.filter(d=>d.isLocked);
@@ -345,19 +530,23 @@ function handleRegenerateKeepLocked(){
   }
   const menu={...old,days:newDays};
   const menus=state.menus.map((m,i)=>i===state.menus.length-1?menu:m);
-  save('wm-menus',menus);setState({menus});notify('Hergegenereerd! 🔄');
+  await dbSaveMenus(menus);
+  notify('Hergegenereerd! 🔄');
 }
 
 function handlePickDish(dayIndex){setState({pickerDay:dayIndex,pickerSearch:''});}
-function handleSelectDish(dishId){
+
+async function handleSelectDish(dishId){
   const menu={...state.menus[state.menus.length-1]};
   menu.days=menu.days.map((d,i)=>i===state.pickerDay?{...d,dishId,isLocked:true}:d);
   const menus=state.menus.map((m,i)=>i===state.menus.length-1?menu:m);
-  save('wm-menus',menus);setState({menus,pickerDay:null});notify('Gerecht gekozen! ✏️');
+  await dbSaveMenus(menus);
+  setState({pickerDay:null});
+  notify('Gerecht gekozen! ✏️');
 }
 
 // Dish CRUD
-function handleSaveDish(){
+async function handleSaveDish(){
   const f=state.dishForm;if(!f||!f.name.trim()){notify('Vul een naam in!');return;}
   let dishes;
   if(f.id){
@@ -367,68 +556,80 @@ function handleSaveDish(){
     dishes=[...state.dishes,{id:genId(),name:f.name.trim(),tags:f.tags,ingredients:f.ingredients,isActive:true,createdAt:new Date().toISOString()}];
     notify('Gerecht toegevoegd! 🍽️');
   }
-  save('wm-dishes',dishes);setState({dishes,dishForm:null});
+  setState({dishForm:null});
+  await dbSaveDishes(dishes);
 }
 
-function handleDeleteDish(id){
+async function handleDeleteDish(id){
   const dishes=state.dishes.filter(d=>d.id!==id);
-  save('wm-dishes',dishes);setState({dishes,deleteTarget:null});notify('Gerecht verwijderd');
+  setState({deleteTarget:null});
+  await dbSaveDishes(dishes);
+  notify('Gerecht verwijderd');
 }
 
-function handleToggleActive(id){
+async function handleToggleActive(id){
   const dishes=state.dishes.map(d=>d.id===id?{...d,isActive:!d.isActive}:d);
-  save('wm-dishes',dishes);setState({dishes});
+  await dbSaveDishes(dishes);
 }
 
 // Shopping
-function handleToggleShopItem(idx){
+async function handleToggleShopItem(idx){
   const s={...state.shopping};s.items=s.items.map((it,i)=>i===idx?{...it,checked:!it.checked}:it);
-  save('wm-shopping',s);setState({shopping:s});
+  await dbSaveShopping(s);
 }
 
-function handleAddManualItem(name){
+async function handleAddManualItem(name){
   if(!name.trim())return;
   const s={...state.shopping};s.items=[...s.items,{name:name.trim(),category:'overig',checked:false,isManual:true}];
-  save('wm-shopping',s);setState({shopping:s});notify('Item toegevoegd');
+  await dbSaveShopping(s);
+  notify('Item toegevoegd');
 }
 
-function handleRegenerateShoppingList(){
+async function handleRegenerateShoppingList(){
   const menu=state.menus[state.menus.length-1];
   if(!menu)return;
   const s=generateShoppingList(menu,state.dishes);
-  save('wm-shopping',s);setState({shopping:s});notify('Lijst vernieuwd! 🛒');
+  await dbSaveShopping(s);
+  notify('Lijst vernieuwd! 🛒');
 }
 
 // Settings
-function handleToggleCookingDay(dayIdx){
+async function handleToggleCookingDay(dayIdx){
   let cd=[...state.cookingDays];
   if(cd.includes(dayIdx))cd=cd.filter(d=>d!==dayIdx);
   else{cd.push(dayIdx);cd.sort((a,b)=>a-b);}
   if(!cd.length){notify('Minimaal 1 kookdag!');return;}
-  save('wm-cookingdays',cd);setState({cookingDays:cd});
+  const settings={dayPrefs:state.dayPrefs,tagLimits:state.tagLimits,cookingDays:cd};
+  await dbSaveSettings(settings);
   notify(DAYS_SHORT[dayIdx]+(cd.includes(dayIdx)?' aan':' uit'));
 }
 
-function handleAddPref(dayIdx,tag){
+async function handleAddPref(dayIdx,tag){
   if(!tag)return;
   let prefs=state.dayPrefs.filter(p=>p.dayOfWeek!==dayIdx);
   prefs.push({dayOfWeek:dayIdx,tag});
-  save('wm-prefs',prefs);setState({dayPrefs:prefs});notify('Voorkeur opgeslagen');
+  const settings={dayPrefs:prefs,tagLimits:state.tagLimits,cookingDays:state.cookingDays};
+  await dbSaveSettings(settings);
+  notify('Voorkeur opgeslagen');
 }
-function handleRemovePref(dayIdx){
+async function handleRemovePref(dayIdx){
   const prefs=state.dayPrefs.filter(p=>p.dayOfWeek!==dayIdx);
-  save('wm-prefs',prefs);setState({dayPrefs:prefs});
+  const settings={dayPrefs:prefs,tagLimits:state.tagLimits,cookingDays:state.cookingDays};
+  await dbSaveSettings(settings);
 }
 
-function handleAddTagLimit(tag,max){
+async function handleAddTagLimit(tag,max){
   if(!tag||!max)return;
   let tl=state.tagLimits.filter(l=>l.tag!==tag);
   tl.push({tag,maxPerWeek:parseInt(max)});
-  save('wm-taglimits',tl);setState({tagLimits:tl});notify('Limiet opgeslagen');
+  const settings={dayPrefs:state.dayPrefs,tagLimits:tl,cookingDays:state.cookingDays};
+  await dbSaveSettings(settings);
+  notify('Limiet opgeslagen');
 }
-function handleRemoveTagLimit(tag){
+async function handleRemoveTagLimit(tag){
   const tl=state.tagLimits.filter(l=>l.tag!==tag);
-  save('wm-taglimits',tl);setState({tagLimits:tl});
+  const settings={dayPrefs:state.dayPrefs,tagLimits:tl,cookingDays:state.cookingDays};
+  await dbSaveSettings(settings);
 }
 
 // ─── Render Functions ───────────────────────────────────────────────────────
@@ -483,11 +684,9 @@ function renderDishes(){
     <button class="btn-small" onclick="setState({dishForm:{name:'',tags:[],ingredients:[]}})">${icon('plus',16)} Nieuw</button>
   </div>`;
 
-  // Search bar
   h+=`<div class="search-wrap"><span class="search-icon">${icon('search',16,'#bbb')}</span>
     <input class="search-bar" placeholder="Zoek op naam of ingrediënt..." value="${esc(state.dishSearch)}" oninput="setState({dishSearch:this.value})"></div>`;
 
-  // Tag filter
   if(allTags.length){
     h+=`<div class="filter-row"><button class="tag-option${!state.filterTag?' active':''}" onclick="setState({filterTag:null})">Alle</button>`;
     allTags.forEach(t=>{h+=`<button class="tag-option${state.filterTag===t?' active':''}" onclick="setState({filterTag:'${esc(t)}'})">${esc(t)}</button>`;});
@@ -506,7 +705,7 @@ function renderDishes(){
         </div>
         <div class="dish-actions">
           <button class="btn-tiny" onclick="handleToggleActive('${d.id}')" title="${d.isActive?'Deactiveer':'Activeer'}" style="opacity:${d.isActive?1:.5}">${d.isActive?'✅':'⏸️'}</button>
-          <button class="btn-tiny" onclick="editDish('${d.id}')">${icon('edit',16,'#81B29A')}</button>
+          <button class="btn-tiny" onclick="setState({dishForm:{id:'${d.id}',name:'${esc(d.name).replace(/'/g,"\\'")}',tags:${JSON.stringify(d.tags)},ingredients:${JSON.stringify(d.ingredients)}}})">${icon('edit',16,'#81B29A')}</button>
           <button class="btn-tiny" onclick="setState({deleteTarget:'${d.id}'})">${icon('trash',16,'#E07A5F')}</button>
         </div>
       </div>`;
@@ -539,38 +738,16 @@ function renderDishForm(){
     });
     h+=`</div>`;
   }
-  // Autocomplete
-  const acQuery=(state.acQuery||'').toLowerCase().trim();
-  const knownIngs=(()=>{const map=new Map();state.dishes.forEach(d=>{d.ingredients.forEach(ing=>{const k=ing.name.toLowerCase().trim();if(!map.has(k))map.set(k,{name:ing.name,category:ing.category||'overig'});});});return[...map.values()];})();
-  const acSuggestions=acQuery.length>=1?knownIngs.filter(ki=>ki.name.toLowerCase().includes(acQuery)&&!f.ingredients.some(ei=>ei.name.toLowerCase()===ki.name.toLowerCase())).slice(0,5):[];
-
-  h+=`<div style="display:flex;gap:6px;align-items:flex-start">
-    <div style="flex:1;position:relative">
-      <input class="input" id="df-ing" placeholder="Ingrediënt" value="${esc(state.acQuery||'')}" oninput="state.acQuery=this.value;render()" onkeydown="if(event.key==='Enter'){event.preventDefault();addDishIng();}" autocomplete="off">`;
-  if(acSuggestions.length){
-    window._acCache=acSuggestions.map(s=>({name:s.name,category:s.category}));
-    h+=`<div class="autocomplete">`;
-    acSuggestions.forEach((s,si)=>{
-      h+=`<div class="ac-item" onpointerdown="event.preventDefault();selectAutoComplete(_acCache[${si}].name,_acCache[${si}].category)">${esc(s.name)}<span class="ac-cat">${esc(s.category)}</span></div>`;
-    });
-    h+=`</div>`;
-  }
-  h+=`</div>
-    <select class="select" id="df-cat" style="width:68px;padding:10px 4px;font-size:11px">`;
+  h+=`<div style="display:flex;gap:8px">
+    <input class="input" id="df-ing" placeholder="Ingrediënt naam" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addDishIng();}">
+    <select class="select" id="df-cat" style="width:120px">`;
   ING_CATS.forEach(c=>{h+=`<option value="${c}">${c}</option>`;});
   h+=`</select>
-    <button onclick="addDishIng()" style="width:36px;height:36px;min-width:36px;border-radius:10px;background:#81B29A;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0" title="Voeg toe">${icon('plus',18,'#fff')}</button>
+    <button class="btn-small" onclick="addDishIng()" style="white-space:nowrap">+ Voeg toe</button>
   </div>
   <button class="btn-secondary" onclick="handleSaveDish()" style="margin-top:16px">${icon('check',18,'#fff')} Opslaan</button>
   </div>`;
   return h;
-}
-
-// Edit dish by ID - safe approach without inline JSON
-function editDish(id){
-  const d=state.dishes.find(dd=>dd.id===id);
-  if(!d)return;
-  setState({dishForm:{id:d.id,name:d.name,tags:[...d.tags],ingredients:d.ingredients.map(ing=>({...ing}))}});
 }
 
 function toggleDishTag(tag){
@@ -582,14 +759,9 @@ function toggleDishTag(tag){
 function removeDishIng(i){state.dishForm.ingredients.splice(i,1);render();}
 function addDishIng(){
   const el=document.getElementById('df-ing');const cat=document.getElementById('df-cat');
-  const val=state.acQuery||'';
-  if(!val.trim())return;
-  state.dishForm.ingredients.push({name:val.trim(),category:cat?cat.value:'overig'});
-  state.acQuery='';render();
-}
-function selectAutoComplete(name,category){
-  state.dishForm.ingredients.push({name,category});
-  state.acQuery='';render();
+  if(!el||!el.value.trim())return;
+  state.dishForm.ingredients.push({name:el.value.trim(),category:cat?cat.value:'overig'});
+  el.value='';render();
 }
 
 function renderShopping(){
@@ -601,7 +773,6 @@ function renderShopping(){
     <h2 class="section-title" style="margin:0">Boodschappen <span style="color:#bbb;font-weight:400;font-size:14px">(${s.items.filter(i=>!i.checked).length}/${s.items.length})</span></h2>
     <button class="btn-small" onclick="handleRegenerateShoppingList()">${icon('refresh',14)} Vernieuw</button>
   </div>`;
-  // Group by category
   const cats={};s.items.forEach((it,idx)=>{const c=it.category||'overig';if(!cats[c])cats[c]=[];cats[c].push({...it,idx});});
   const CAT_EMOJI={groenten:'🥬',fruit:'🍎',vlees:'🥩',vis:'🐟',zuivel:'🧀',droog:'🌾',sauzen:'🫙',kruiden:'🧂',overig:'📦'};
   Object.keys(cats).sort().forEach(cat=>{
@@ -613,7 +784,6 @@ function renderShopping(){
       </div>`;
     });
   });
-  // Manual add
   h+=`<div style="display:flex;gap:8px;margin-top:16px">
     <input class="input" id="shop-add" placeholder="Extra item toevoegen..." style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();var el=document.getElementById('shop-add');handleAddManualItem(el.value);el.value='';}">
     <button class="btn-small" onclick="var el=document.getElementById('shop-add');handleAddManualItem(el.value);el.value='';">+ Voeg toe</button>
@@ -623,16 +793,22 @@ function renderShopping(){
 
 function renderSettings(){
   let h='';
-  // Cooking days
+
+  // Sync status banner
+  if(state.syncStatus==='error'){
+    h+=`<div style="background:#FFF3F0;border:1px solid #E07A5F;border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#E07A5F;display:flex;align-items:center;gap:8px">
+      ${icon('wifi',16,'#E07A5F')} Offline modus — wijzigingen worden niet gedeeld
+    </div>`;
+  }
+
   h+=`<h2 class="section-title">Kookdagen</h2>
-    <p class="hint">Op welke dagen kook je? Niet-geselecteerde dagen worden overgeslagen.</p>
+    <p class="hint">Op welke dagen kook je?</p>
     <div class="cooking-days">`;
   DAYS_SHORT.forEach((d,i)=>{
     h+=`<button class="day-toggle${state.cookingDays.includes(i)?' active':''}" onclick="handleToggleCookingDay(${i})">${d}</button>`;
   });
   h+=`</div>`;
 
-  // Day preferences
   h+=`<h2 class="section-title">Dagvoorkeuren</h2>
     <p class="hint">Stel een gewenst type gerecht in per dag.</p>`;
   state.cookingDays.forEach(i=>{
@@ -651,7 +827,6 @@ function renderSettings(){
     h+=`</div>`;
   });
 
-  // Tag limits
   h+=`<h2 class="section-title" style="margin-top:20px">Tag limieten</h2>
     <p class="hint">Beperk hoe vaak een type per week mag voorkomen.</p>`;
   state.tagLimits.forEach(tl=>{
@@ -668,7 +843,6 @@ function renderSettings(){
     <button class="btn-small" onclick="var t=document.getElementById('tl-tag'),m=document.getElementById('tl-max');handleAddTagLimit(t.value,m.value)">+ Voeg toe</button>
   </div>`;
 
-  // History
   h+=`<h2 class="section-title" style="margin-top:20px">Historie</h2>`;
   const confirmed=state.menus.filter(m=>m.confirmed).slice(-5).reverse();
   if(!confirmed.length){
@@ -689,7 +863,6 @@ function renderSettings(){
 // ─── Modals ─────────────────────────────────────────────────────────────────
 function renderModals(){
   let h='';
-  // Dish picker
   if(state.pickerDay!==null){
     const search=state.pickerSearch.toLowerCase().trim();
     let dishes=state.dishes.filter(d=>d.isActive);
@@ -700,7 +873,7 @@ function renderModals(){
           <h3 class="modal-title">Kies een gerecht</h3>
           <button class="btn-tiny" onclick="setState({pickerDay:null})">${icon('x',20,'#999')}</button>
         </div>
-        <input class="picker-search" placeholder="Zoek op naam, tag of ingrediënt..." value="${esc(state.pickerSearch)}" oninput="setState({pickerSearch:this.value})" autofocus>
+        <input class="picker-search" placeholder="Zoek..." value="${esc(state.pickerSearch)}" oninput="setState({pickerSearch:this.value})" autofocus>
         <div class="picker-list">`;
     dishes.forEach(d=>{
       h+=`<button class="picker-item" onclick="handleSelectDish('${d.id}')">
@@ -708,8 +881,7 @@ function renderModals(){
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">${d.tags.map(t=>`<span class="tag-small">${esc(t)}</span>`).join('')}</div>
         <div class="picker-ingredients">${d.ingredients.map(ing=>{
           const match=search&&ing.name.toLowerCase().includes(search);
-          return`<span class="picker-ing${match?' match'
-          :''}">${esc(ing.name)}</span>`;
+          return`<span class="picker-ing${match?' match':''}">${esc(ing.name)}</span>`;
         }).join('')}</div>
       </button>`;
     });
@@ -717,13 +889,12 @@ function renderModals(){
     h+=`</div></div></div>`;
   }
 
-  // Delete confirmation
   if(state.deleteTarget){
     const d=state.dishes.find(dd=>dd.id===state.deleteTarget);
     h+=`<div class="modal-overlay center" onclick="if(event.target===this)setState({deleteTarget:null})">
       <div class="confirm-box">
         <div class="confirm-title">Gerecht verwijderen?</div>
-        <div class="confirm-msg">"${esc(d?d.name:'')}" wordt permanent verwijderd.</div>
+        <div class="confirm-msg">"${esc(d?d.name:'')}" wordt permanent verwijderd voor iedereen.</div>
         <div class="confirm-btns">
           <button class="confirm-cancel" onclick="setState({deleteTarget:null})">Annuleer</button>
           <button class="confirm-delete" onclick="handleDeleteDish('${state.deleteTarget}')">Verwijder</button>
@@ -736,12 +907,6 @@ function renderModals(){
 
 // ─── Main Render ────────────────────────────────────────────────────────────
 function render(){
-  // Save focused element info before re-render
-  const activeId=document.activeElement?document.activeElement.id:null;
-  const activeTag=document.activeElement?document.activeElement.tagName:null;
-  let cursorPos=null;
-  if(activeId&&(activeTag==='INPUT'||activeTag==='TEXTAREA')){try{cursorPos=document.activeElement.selectionStart;}catch(e){}}
-
   const tabs=[
     {id:'home',icon:'home',label:'Menu'},
     {id:'dishes',icon:'dish',label:'Gerechten'},
@@ -754,6 +919,10 @@ function render(){
   else if(state.tab==='cart')content=renderShopping();
   else if(state.tab==='settings')content=renderSettings();
 
+  // Sync dot kleuren
+  const dotColor={ok:'#81B29A',syncing:'#F2CC8F',error:'#E07A5F'}[state.syncStatus]||'#81B29A';
+  const dotClass=state.syncStatus==='syncing'?' syncing':state.syncStatus==='error'?' error':'';
+
   document.getElementById('root').innerHTML=`
     <div class="app">
       ${state.notification?`<div class="toast">${esc(state.notification)}</div>`:''}
@@ -761,6 +930,7 @@ function render(){
         <span class="header-emoji">🍳</span>
         <h1 class="header-title">Weekmenu</h1>
         <span class="header-week">Week ${getWeekNumber(new Date())}</span>
+        <div class="sync-dot${dotClass}" title="${state.syncStatus==='ok'?'Verbonden':'Bezig...'}" style="background:${dotColor}"></div>
       </header>
       <main class="main">${content}</main>
       <nav class="nav">
@@ -771,16 +941,10 @@ function render(){
       </nav>
       ${renderModals()}
     </div>`;
-
-  // Restore focus and cursor position after re-render
-  if(activeId){
-    const el=document.getElementById(activeId);
-    if(el){el.focus();if(cursorPos!==null){try{el.setSelectionRange(cursorPos,cursorPos);}catch(e){}}}
-  }
 }
 
-// ─── Init ───────────────────────────────────────────────────────────────────
-render();
+// ─── Boot ───────────────────────────────────────────────────────────────────
+initApp();
 </script>
 </body>
 </html>
