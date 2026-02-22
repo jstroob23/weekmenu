@@ -286,12 +286,17 @@ const SB_KEYS = { 'wm-dishes':'dishes','wm-menus':'menus','wm-shopping':'shoppin
 
 function load(key,fb){return loadLocal(key,fb);}
 
+// Bijhouden welke data we zelf net hebben weggeschreven (om eigen echo te negeren)
+const _pendingWrites = {};
+
 async function save(key,data){
   saveLocal(key,data);
   const sbKey = SB_KEYS[key];
   if(!sbKey) return;
   if(SUPABASE_URL==='JOUW_SUPABASE_URL') return; // niet geconfigureerd
   setSyncStatus('syncing');
+  // Sla fingerprint op zodat we de echo kunnen herkennen
+  _pendingWrites[sbKey] = JSON.stringify(data);
   const ok = await sb.set(sbKey, data);
   setSyncStatus(ok ? 'ok' : 'offline');
 }
@@ -937,10 +942,13 @@ if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
     const keyMap = { dishes:'wm-dishes', menus:'wm-menus', shopping:'wm-shopping', prefs:'wm-prefs', taglimits:'wm-taglimits', cookingdays:'wm-cookingdays' };
     const localKey = keyMap[record.key];
     if(!localKey) return;
-    // Voorkom dubbele render: als data identiek is aan huidige state, negeer (eigen write echo)
-    const stateMap = { dishes:state.dishes, menus:state.menus, shopping:state.shopping, prefs:state.dayPrefs, taglimits:state.tagLimits, cookingdays:state.cookingDays };
-    const current = stateMap[record.key];
-    if(JSON.stringify(current) === JSON.stringify(record.data)){ setSyncStatus('ok'); return; }
+    // Negeer eigen echo: als we deze data zelf hebben weggeschreven, sla render over
+    const incoming = JSON.stringify(record.data);
+    if(_pendingWrites[record.key] === incoming){
+      delete _pendingWrites[record.key];
+      setSyncStatus('ok');
+      return;
+    }
     saveLocal(localKey, record.data);
     if(record.key==='dishes') state.dishes = record.data;
     else if(record.key==='menus') state.menus = record.data;
