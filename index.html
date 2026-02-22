@@ -161,7 +161,7 @@ button{cursor:pointer;border:none;background:none}
 <body>
 <div id="root"></div>
 <script>
-const APP_VERSION = '0.02';
+const APP_VERSION = '0.03';
 
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
@@ -329,11 +329,12 @@ async function loadFromSupabase(){
   ];
   let anyOk = false;
   let changed = false;
+  const loaded = {};
   for(const [sbKey,localKey,fb] of keys){
     const data = await sb.get(sbKey);
     if(data !== null){
       anyOk = true;
-      // Alleen updaten als de data werkelijk verschilt van huidige state
+      loaded[sbKey] = data;
       const stateMap = { dishes:state.dishes, menus:state.menus, shopping:state.shopping, prefs:state.dayPrefs, taglimits:state.tagLimits, cookingdays:state.cookingDays };
       if(JSON.stringify(stateMap[sbKey]) !== JSON.stringify(data)){
         saveLocal(localKey, data);
@@ -341,17 +342,19 @@ async function loadFromSupabase(){
       }
     }
   }
-  // Alleen renderen als de data echt veranderd is én er geen eigen writes meer pending zijn
+  // Altijd state bijwerken voor niet-menu keys (prefs, dishes, taglimits, cookingdays)
+  // zodat dagvoorkeuren beschikbaar zijn vóór het genereren
+  if(loaded.prefs !== undefined) state.dayPrefs = loaded.prefs;
+  if(loaded.dishes !== undefined) state.dishes = loaded.dishes;
+  if(loaded.taglimits !== undefined) state.tagLimits = loaded.taglimits;
+  if(loaded.cookingdays !== undefined) state.cookingDays = loaded.cookingdays;
+  // Menus en shopping alleen bijwerken als er geen eigen writes pending zijn
   // (voorkomt dat een trage Supabase fetch een zojuist gegenereerd menu overschrijft)
   const noPendingWrites = Object.values(_ownWrites).every(v => v === 0);
   console.log('[LOAD] changed=', changed, 'noPendingWrites=', noPendingWrites, 'ownWrites=', JSON.stringify(_ownWrites));
   if(changed && noPendingWrites){
-    state.dishes = loadLocal('wm-dishes', DEFAULT_DISHES);
-    state.menus = loadLocal('wm-menus', []);
-    state.shopping = loadLocal('wm-shopping', null);
-    state.dayPrefs = loadLocal('wm-prefs', []);
-    state.tagLimits = loadLocal('wm-taglimits', []);
-    state.cookingDays = loadLocal('wm-cookingdays', [0,1,2,3,4,5,6]);
+    if(loaded.menus !== undefined) state.menus = loaded.menus;
+    if(loaded.shopping !== undefined) state.shopping = loaded.shopping;
     render();
   }
   setSyncStatus(anyOk ? 'ok' : 'offline');
@@ -399,7 +402,7 @@ let state={
 if(!localStorage.getItem('wm-dishes'))save('wm-dishes',DEFAULT_DISHES);
 
 function setState(patch){Object.assign(state,patch);render();}
-function notify(msg){state.notification=msg;render();setTimeout(()=>{state.notification=null;render();},2500);}
+function notify(msg){state.notification=msg;render();setTimeout(()=>{const t=document.querySelector(".toast");if(t){t.style.transition="opacity .4s";t.style.opacity="0";}setTimeout(()=>{state.notification=null;},2800);},2400);}
 
 // ─── Menu Generation Algorithm ──────────────────────────────────────────────
 function generateWeekMenu(dishes,recentDishIds,dayPreferences,tagLimits,cookingDays){
