@@ -325,15 +325,22 @@ async function loadFromSupabase(){
     ['cookingdays','wm-cookingdays',[0,1,2,3,4,5,6]],
   ];
   let anyOk = false;
+  let changed = false;
   for(const [sbKey,localKey,fb] of keys){
     const data = await sb.get(sbKey);
     if(data !== null){
-      saveLocal(localKey, data);
       anyOk = true;
+      // Alleen updaten als de data werkelijk verschilt van huidige state
+      const stateMap = { dishes:state.dishes, menus:state.menus, shopping:state.shopping, prefs:state.dayPrefs, taglimits:state.tagLimits, cookingdays:state.cookingDays };
+      if(JSON.stringify(stateMap[sbKey]) !== JSON.stringify(data)){
+        saveLocal(localKey, data);
+        changed = true;
+      }
     }
   }
-  if(anyOk){
-    // Herlaad state vanuit bijgewerkte localStorage
+  // Alleen renderen als er iets veranderd is én de gebruiker nog niet heeft geïnterageerd
+  // (zo vermijden we dat een trage Supabase-response een zojuist gegenereerd menu overschrijft)
+  if(changed && !_appHasInteracted){
     state.dishes = loadLocal('wm-dishes', DEFAULT_DISHES);
     state.menus = loadLocal('wm-menus', []);
     state.shopping = loadLocal('wm-shopping', null);
@@ -932,7 +939,12 @@ function render(){
 // ─── Init ───────────────────────────────────────────────────────────────────
 render();
 
-// Laad data van Supabase en start realtime sync
+// Laad data van Supabase alleen bij eerste opstart (vóór enige gebruikersinteractie)
+// Zodra de gebruiker iets doet, stoppen we met ophalen van Supabase om re-renders te vermijden
+let _appHasInteracted = false;
+const _origSetState = setState;
+window.setState = function(patch){ _appHasInteracted = true; _origSetState(patch); };
+
 loadFromSupabase();
 
 if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
