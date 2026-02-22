@@ -161,7 +161,7 @@ button{cursor:pointer;border:none;background:none}
 <body>
 <div id="root"></div>
 <script>
-const APP_VERSION = '0.03';
+const APP_VERSION = '0.04';
 
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
@@ -447,7 +447,7 @@ function generateShoppingList(menu,dishes){
 }
 
 // ─── Event Handlers ─────────────────────────────────────────────────────────
-function handleGenerate(){
+function handleGenerate(){console.log("[PREFS] state.dayPrefs=", JSON.stringify(state.dayPrefs), "cookingDays=", JSON.stringify(state.cookingDays));
   const recentIds=[];
   state.menus.slice(-2).forEach(m=>m.days.forEach(d=>recentIds.push(d.dishId)));
   const menu=generateWeekMenu(state.dishes,recentIds,state.dayPrefs,state.tagLimits,state.cookingDays);
