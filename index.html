@@ -161,6 +161,8 @@ button{cursor:pointer;border:none;background:none}
 <body>
 <div id="root"></div>
 <script>
+const APP_VERSION = '0.01';
+
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbmhhenVuenR0c3J6d2FoYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MTA1MTEsImV4cCI6MjA4NzI4NjUxMX0.jbr6YfC8wRYAdspXAePTvTjaYWLWtKTEzY6KI5lBVKQ';      // anon public key
@@ -338,9 +340,10 @@ async function loadFromSupabase(){
       }
     }
   }
-  // Alleen renderen als er iets veranderd is én de gebruiker nog niet heeft geïnterageerd
-  // (zo vermijden we dat een trage Supabase-response een zojuist gegenereerd menu overschrijft)
-  if(changed && !_appHasInteracted){
+  // Alleen renderen als de data echt veranderd is én er geen eigen writes meer pending zijn
+  // (voorkomt dat een trage Supabase fetch een zojuist gegenereerd menu overschrijft)
+  const noPendingWrites = Object.values(_ownWrites).every(v => v === 0);
+  if(changed && noPendingWrites){
     state.dishes = loadLocal('wm-dishes', DEFAULT_DISHES);
     state.menus = loadLocal('wm-menus', []);
     state.shopping = loadLocal('wm-shopping', null);
@@ -406,13 +409,22 @@ function generateWeekMenu(dishes,recentDishIds,dayPreferences,tagLimits,cookingD
   const days=[];const used=new Set();const tagCounts={};
   for(const dayIdx of cookingDays){
     const pref=dayPreferences.find(p=>p.dayOfWeek===dayIdx);
-    let cands=pool.filter(d=>!used.has(d.id));
-    if(!cands.length)cands=active.filter(d=>!used.has(d.id));
-    if(!cands.length)cands=[...active];
-    // Tag limieten eerst toepassen (voor algemene pool)
-    if(tagLimits.length){const wl=cands.filter(dish=>dish.tags.every(tag=>{const lim=tagLimits.find(tl=>tl.tag.toLowerCase()===tag.toLowerCase());if(!lim)return true;return(tagCounts[tag.toLowerCase()]||0)<lim.maxPerWeek;}));if(wl.length)cands=wl;}
-    // Dagvoorkeur heeft altijd prioriteit - overschrijft tag limiet filter als er kandidaten zijn
-    if(pref){const m=cands.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));if(m.length)cands=m;}
+    // Als er een dagvoorkeur is, zoek eerst in volledige active pool (niet beperkt door used/pool)
+    // zodat de voorkeur altijd kan worden ingevuld, ook als dat gerecht al ergens anders staat
+    let cands;
+    if(pref){
+      cands=active.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));
+      // Verkies niet-gebruikte gerechten maar val terug op gebruikt als nodig
+      const unused=cands.filter(d=>!used.has(d.id));
+      if(unused.length)cands=unused;
+    }else{
+      cands=pool.filter(d=>!used.has(d.id));
+      if(!cands.length)cands=active.filter(d=>!used.has(d.id));
+      if(!cands.length)cands=[...active];
+      // Tag limieten alleen toepassen als er geen dagvoorkeur is
+      if(tagLimits.length){const wl=cands.filter(dish=>dish.tags.every(tag=>{const lim=tagLimits.find(tl=>tl.tag.toLowerCase()===tag.toLowerCase());if(!lim)return true;return(tagCounts[tag.toLowerCase()]||0)<lim.maxPerWeek;}));if(wl.length)cands=wl;}
+    }
+    if(!cands.length){cands=active.filter(d=>!used.has(d.id));if(!cands.length)cands=[...active];}
     if(days.length){const last=dishes.find(d=>d.id===days[days.length-1].dishId);if(last){const nr=cands.filter(d=>!d.tags.some(t=>last.tags.includes(t)));if(nr.length)cands=nr;}}
     const chosen=cands[Math.floor(Math.random()*cands.length)];
     days.push({dayOfWeek:dayIdx,dishId:chosen.id,isLocked:false});
@@ -916,7 +928,7 @@ function render(){
       <header class="header">
         <span class="header-emoji">🍳</span>
         <h1 class="header-title">Weekmenu</h1>
-        <span class="header-week">Week ${getWeekNumber(new Date())}</span>
+        <span class="header-week">Week ${getWeekNumber(new Date())} · v${APP_VERSION}</span>
         <div id="sync-indicator" title="${{'ok':'Gesynchroniseerd','syncing':'Synchroniseren...','offline':'Offline (lokaal opgeslagen)'}[syncStatus]||'Niet geconfigureerd'}" style="width:10px;height:10px;border-radius:50%;background:${{'ok':'#81B29A','syncing':'#F2CC8F','offline':'#E07A5F'}[syncStatus]||'#bbb'};flex-shrink:0;transition:background .4s"></div>
       </header>
       <main class="main">${content}</main>
@@ -941,10 +953,6 @@ render();
 
 // Laad data van Supabase alleen bij eerste opstart (vóór enige gebruikersinteractie)
 // Zodra de gebruiker iets doet, stoppen we met ophalen van Supabase om re-renders te vermijden
-let _appHasInteracted = false;
-const _origSetState = setState;
-window.setState = function(patch){ _appHasInteracted = true; _origSetState(patch); };
-
 loadFromSupabase();
 
 if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
