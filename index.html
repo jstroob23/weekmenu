@@ -164,6 +164,7 @@ button{cursor:pointer;border:none;background:none}
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbmhhenVuenR0c3J6d2FoYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MTA1MTEsImV4cCI6MjA4NzI4NjUxMX0.jbr6YfC8wRYAdspXAePTvTjaYWLWtKTEzY6KI5lBVKQ';      // anon public key
+
 // ─── Supabase Client (lightweight, geen SDK nodig) ──────────────────────────
 const sb = {
   _headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
@@ -219,7 +220,6 @@ const sb = {
         ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
-            console.log('[WS]', msg.event, JSON.stringify(msg).substring(0,200));
             // Realtime v2: postgres_changes event, record in payload.data.record
             if (msg.event === 'postgres_changes') {
               const record = msg.payload?.data?.record;
@@ -286,8 +286,8 @@ const SB_KEYS = { 'wm-dishes':'dishes','wm-menus':'menus','wm-shopping':'shoppin
 
 function load(key,fb){return loadLocal(key,fb);}
 
-// Bijhouden welke data we zelf net hebben weggeschreven (om eigen echo te negeren)
-const _pendingWrites = {};
+// Tel hoeveel eigen writes er nog een echo verwachten per key
+const _ownWrites = {};
 
 async function save(key,data){
   saveLocal(key,data);
@@ -295,8 +295,7 @@ async function save(key,data){
   if(!sbKey) return;
   if(SUPABASE_URL==='JOUW_SUPABASE_URL') return; // niet geconfigureerd
   setSyncStatus('syncing');
-  // Sla fingerprint op zodat we de echo kunnen herkennen
-  _pendingWrites[sbKey] = JSON.stringify(data);
+  _ownWrites[sbKey] = (_ownWrites[sbKey] || 0) + 1;
   const ok = await sb.set(sbKey, data);
   setSyncStatus(ok ? 'ok' : 'offline');
 }
@@ -942,11 +941,9 @@ if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
     const keyMap = { dishes:'wm-dishes', menus:'wm-menus', shopping:'wm-shopping', prefs:'wm-prefs', taglimits:'wm-taglimits', cookingdays:'wm-cookingdays' };
     const localKey = keyMap[record.key];
     if(!localKey) return;
-    // Negeer eigen echo: als we deze data zelf hebben weggeschreven, sla render over
-    const incoming = JSON.stringify(record.data);
-    console.log('[SUB] key=', record.key, 'pending=', !!_pendingWrites[record.key], 'match=', _pendingWrites[record.key]===incoming);
-    if(_pendingWrites[record.key] === incoming){
-      delete _pendingWrites[record.key];
+    // Negeer eigen echo: tel pending writes af, render alleen als het een externe update is
+    if(_ownWrites[record.key] > 0){
+      _ownWrites[record.key]--;
       setSyncStatus('ok');
       return;
     }
