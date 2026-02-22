@@ -298,6 +298,7 @@ async function save(key,data){
   if(SUPABASE_URL==='JOUW_SUPABASE_URL') return; // niet geconfigureerd
   setSyncStatus('syncing');
   _ownWrites[sbKey] = (_ownWrites[sbKey] || 0) + 1;
+  console.log('[SAVE] key=', sbKey, 'ownWrites=', JSON.stringify(_ownWrites));
   const ok = await sb.set(sbKey, data);
   setSyncStatus(ok ? 'ok' : 'offline');
 }
@@ -343,6 +344,7 @@ async function loadFromSupabase(){
   // Alleen renderen als de data echt veranderd is én er geen eigen writes meer pending zijn
   // (voorkomt dat een trage Supabase fetch een zojuist gegenereerd menu overschrijft)
   const noPendingWrites = Object.values(_ownWrites).every(v => v === 0);
+  console.log('[LOAD] changed=', changed, 'noPendingWrites=', noPendingWrites, 'ownWrites=', JSON.stringify(_ownWrites));
   if(changed && noPendingWrites){
     state.dishes = loadLocal('wm-dishes', DEFAULT_DISHES);
     state.menus = loadLocal('wm-menus', []);
@@ -414,6 +416,7 @@ function generateWeekMenu(dishes,recentDishIds,dayPreferences,tagLimits,cookingD
     let cands;
     if(pref){
       cands=active.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));
+      console.log('[GEN] day=', dayIdx, 'pref=', pref.tag, 'matching dishes=', cands.map(d=>d.name));
       // Verkies niet-gebruikte gerechten maar val terug op gebruikt als nodig
       const unused=cands.filter(d=>!used.has(d.id));
       if(unused.length)cands=unused;
@@ -962,6 +965,7 @@ if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
     const localKey = keyMap[record.key];
     if(!localKey) return;
     // Negeer eigen echo: tel pending writes af, render alleen als het een externe update is
+    console.log('[SUB] key=', record.key, 'ownWrites=', _ownWrites[record.key]);
     if(_ownWrites[record.key] > 0){
       _ownWrites[record.key]--;
       setSyncStatus('ok');
