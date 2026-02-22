@@ -161,11 +161,11 @@ button{cursor:pointer;border:none;background:none}
 <body>
 <div id="root"></div>
 <script>
-const APP_VERSION = '0.06';
+const APP_VERSION = '0.08';
 
 // ─── Supabase Config ────────────────────────────────────────────────────────
-const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbmhhenVuenR0c3J6d2FoYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MTA1MTEsImV4cCI6MjA4NzI4NjUxMX0.jbr6YfC8wRYAdspXAePTvTjaYWLWtKTEzY6KI5lBVKQ';      // anon public key
+const SUPABASE_URL = 'JOUW_SUPABASE_URL';   // bv. https://xxxx.supabase.co
+const SUPABASE_ANON = 'JOUW_ANON_KEY';      // anon public key
 
 // ─── Supabase Client (lightweight, geen SDK nodig) ──────────────────────────
 const sb = {
@@ -352,11 +352,13 @@ async function loadFromSupabase(){
   // (voorkomt dat een trage Supabase fetch een zojuist gegenereerd menu overschrijft)
   const noPendingWrites = Object.values(_ownWrites).every(v => v === 0);
   console.log('[LOAD] changed=', changed, 'noPendingWrites=', noPendingWrites, 'ownWrites=', JSON.stringify(_ownWrites));
-  if(changed && noPendingWrites){
+  if(noPendingWrites){
     if(loaded.menus !== undefined) state.menus = loaded.menus;
     if(loaded.shopping !== undefined) state.shopping = loaded.shopping;
-    render();
   }
+  // Altijd renderen als er Supabase data beschikbaar is (ook al was er geen verschil)
+  // zodat een nieuw toestel altijd de juiste gedeelde data ziet
+  if(anyOk) render();
   setSyncStatus(anyOk ? 'ok' : 'offline');
 }
 
@@ -398,11 +400,52 @@ let state={
   deleteTarget:null,
   settingsSection:'main',
 };
-// First time? save defaults
-if(!localStorage.getItem('wm-dishes'))save('wm-dishes',DEFAULT_DISHES);
+// First time? alleen lokaal opslaan (niet naar Supabase - anders overschrijven we gedeelde data)
+if(!localStorage.getItem('wm-dishes'))saveLocal('wm-dishes',DEFAULT_DISHES);
 
 function setState(patch){Object.assign(state,patch);render();}
 function notify(msg){state.notification=msg;render();setTimeout(()=>{const t=document.querySelector(".toast");if(t){t.style.transition="opacity .4s";t.style.opacity="0";}setTimeout(()=>{state.notification=null;},2800);},2400);}
+
+// ─── Export / Import ────────────────────────────────────────────────────────
+function handleExport(){
+  const data={
+    dishes:state.dishes,
+    prefs:state.dayPrefs,
+    tagLimits:state.tagLimits,
+    cookingDays:state.cookingDays,
+    exportedAt:new Date().toISOString(),
+    version:APP_VERSION
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='weekmenu-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  notify('Backup gedownload! 💾');
+}
+
+function handleImport(){
+  const input=document.createElement('input');
+  input.type='file';input.accept='.json';
+  input.onchange=async e=>{
+    const file=e.target.files[0];if(!file)return;
+    try{
+      const text=await file.text();
+      const data=JSON.parse(text);
+      if(!data.dishes||!Array.isArray(data.dishes))throw new Error('Ongeldig bestand');
+      if(!confirm('Wil je de huidige gerechten en instellingen vervangen door de backup?'))return;
+      if(data.dishes){save('wm-dishes',data.dishes);state.dishes=data.dishes;}
+      if(data.prefs){save('wm-prefs',data.prefs);state.dayPrefs=data.prefs;}
+      if(data.tagLimits){save('wm-taglimits',data.tagLimits);state.tagLimits=data.tagLimits;}
+      if(data.cookingDays){save('wm-cookingdays',data.cookingDays);state.cookingDays=data.cookingDays;}
+      render();
+      notify('Backup hersteld! ✅');
+    }catch(err){notify('Fout bij inlezen: '+err.message);}
+  };
+  input.click();
+}
 
 // ─── Menu Generation Algorithm ──────────────────────────────────────────────
 function generateWeekMenu(dishes,recentDishIds,dayPreferences,tagLimits,cookingDays){
@@ -865,6 +908,14 @@ function renderSettings(){
       h+=`</div>`;
     });
   }
+  // Export / Import
+  h+=`<h2 class="section-title" style="margin-top:20px">Backup</h2>
+    <p class="hint">Exporteer je gerechten en instellingen als JSON bestand, of herstel vanuit een backup.</p>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn-small" onclick="handleExport()" style="flex:1">💾 Exporteer backup</button>
+      <button class="btn-small" onclick="handleImport()" style="flex:1">📂 Importeer backup</button>
+    </div>`;
+
   return h;
 }
 
