@@ -398,8 +398,10 @@ function generateWeekMenu(dishes,recentDishIds,dayPreferences,tagLimits,cookingD
     let cands=pool.filter(d=>!used.has(d.id));
     if(!cands.length)cands=active.filter(d=>!used.has(d.id));
     if(!cands.length)cands=[...active];
-    if(pref){const m=cands.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));if(m.length)cands=m;}
+    // Tag limieten eerst toepassen (voor algemene pool)
     if(tagLimits.length){const wl=cands.filter(dish=>dish.tags.every(tag=>{const lim=tagLimits.find(tl=>tl.tag.toLowerCase()===tag.toLowerCase());if(!lim)return true;return(tagCounts[tag.toLowerCase()]||0)<lim.maxPerWeek;}));if(wl.length)cands=wl;}
+    // Dagvoorkeur heeft altijd prioriteit - overschrijft tag limiet filter als er kandidaten zijn
+    if(pref){const m=cands.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));if(m.length)cands=m;}
     if(days.length){const last=dishes.find(d=>d.id===days[days.length-1].dishId);if(last){const nr=cands.filter(d=>!d.tags.some(t=>last.tags.includes(t)));if(nr.length)cands=nr;}}
     const chosen=cands[Math.floor(Math.random()*cands.length)];
     days.push({dayOfWeek:dayIdx,dishId:chosen.id,isLocked:false});
@@ -478,8 +480,8 @@ function handleRegenerateKeepLocked(){
     if(!cands.length)cands=active.filter(d=>!used.has(d.id));
     if(!cands.length)cands=[...active];
     const pref=state.dayPrefs.find(p=>p.dayOfWeek===dayIdx);
-    if(pref){const m=cands.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));if(m.length)cands=m;}
     if(state.tagLimits.length){const wl=cands.filter(dish=>dish.tags.every(tag=>{const lim=state.tagLimits.find(tl=>tl.tag.toLowerCase()===tag.toLowerCase());if(!lim)return true;return(tagCounts[tag.toLowerCase()]||0)<lim.maxPerWeek;}));if(wl.length)cands=wl;}
+    if(pref){const m=cands.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));if(m.length)cands=m;}
     if(newDays.length){const last=state.dishes.find(d=>d.id===newDays[newDays.length-1].dishId);if(last){const nr=cands.filter(d=>!d.tags.some(t=>last.tags.includes(t)));if(nr.length)cands=nr;}}
     const chosen=cands[Math.floor(Math.random()*cands.length)];
     newDays.push({dayOfWeek:dayIdx,dishId:chosen.id,isLocked:false});
@@ -935,8 +937,11 @@ if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
     const keyMap = { dishes:'wm-dishes', menus:'wm-menus', shopping:'wm-shopping', prefs:'wm-prefs', taglimits:'wm-taglimits', cookingdays:'wm-cookingdays' };
     const localKey = keyMap[record.key];
     if(!localKey) return;
+    // Voorkom dubbele render: als data identiek is aan huidige state, negeer (eigen write echo)
+    const stateMap = { dishes:state.dishes, menus:state.menus, shopping:state.shopping, prefs:state.dayPrefs, taglimits:state.tagLimits, cookingdays:state.cookingDays };
+    const current = stateMap[record.key];
+    if(JSON.stringify(current) === JSON.stringify(record.data)){ setSyncStatus('ok'); return; }
     saveLocal(localKey, record.data);
-    // Update state en re-render
     if(record.key==='dishes') state.dishes = record.data;
     else if(record.key==='menus') state.menus = record.data;
     else if(record.key==='shopping') state.shopping = record.data;
