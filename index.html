@@ -164,7 +164,6 @@ button{cursor:pointer;border:none;background:none}
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbmhhenVuenR0c3J6d2FoYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MTA1MTEsImV4cCI6MjA4NzI4NjUxMX0.jbr6YfC8wRYAdspXAePTvTjaYWLWtKTEzY6KI5lBVKQ';      // anon public key
-
 // ─── Supabase Client (lightweight, geen SDK nodig) ──────────────────────────
 const sb = {
   _headers: { 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + SUPABASE_ANON, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
@@ -220,6 +219,7 @@ const sb = {
         ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
+            console.log('[WS]', msg.event, JSON.stringify(msg).substring(0,200));
             // Realtime v2: postgres_changes event, record in payload.data.record
             if (msg.event === 'postgres_changes') {
               const record = msg.payload?.data?.record;
@@ -944,6 +944,7 @@ if(SUPABASE_URL !== 'JOUW_SUPABASE_URL'){
     if(!localKey) return;
     // Negeer eigen echo: als we deze data zelf hebben weggeschreven, sla render over
     const incoming = JSON.stringify(record.data);
+    console.log('[SUB] key=', record.key, 'pending=', !!_pendingWrites[record.key], 'match=', _pendingWrites[record.key]===incoming);
     if(_pendingWrites[record.key] === incoming){
       delete _pendingWrites[record.key];
       setSyncStatus('ok');
