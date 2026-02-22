@@ -161,7 +161,7 @@ button{cursor:pointer;border:none;background:none}
 <body>
 <div id="root"></div>
 <script>
-const APP_VERSION = '0.04';
+const APP_VERSION = '0.05';
 
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
@@ -509,8 +509,16 @@ function handleRegenerateKeepLocked(){
     if(!cands.length)cands=active.filter(d=>!used.has(d.id));
     if(!cands.length)cands=[...active];
     const pref=state.dayPrefs.find(p=>p.dayOfWeek===dayIdx);
-    if(state.tagLimits.length){const wl=cands.filter(dish=>dish.tags.every(tag=>{const lim=state.tagLimits.find(tl=>tl.tag.toLowerCase()===tag.toLowerCase());if(!lim)return true;return(tagCounts[tag.toLowerCase()]||0)<lim.maxPerWeek;}));if(wl.length)cands=wl;}
-    if(pref){const m=cands.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));if(m.length)cands=m;}
+    console.log('[GEN] day=',dayIdx,'pref=',pref?pref.tag:null,'cands before pref=',cands.map(d=>d.name));
+    if(pref){
+      // Dagvoorkeur: zoek in volledige active pool (negeert used/pool filter)
+      const prefAll=active.filter(d=>d.tags.some(t=>t.toLowerCase()===pref.tag.toLowerCase()));
+      const prefUnused=prefAll.filter(d=>!used.has(d.id));
+      cands=prefUnused.length?prefUnused:prefAll;
+      console.log('[GEN] pref match=',cands.map(d=>d.name));
+    } else {
+      if(state.tagLimits.length){const wl=cands.filter(dish=>dish.tags.every(tag=>{const lim=state.tagLimits.find(tl=>tl.tag.toLowerCase()===tag.toLowerCase());if(!lim)return true;return(tagCounts[tag.toLowerCase()]||0)<lim.maxPerWeek;}));if(wl.length)cands=wl;}
+    }
     if(newDays.length){const last=state.dishes.find(d=>d.id===newDays[newDays.length-1].dishId);if(last){const nr=cands.filter(d=>!d.tags.some(t=>last.tags.includes(t)));if(nr.length)cands=nr;}}
     const chosen=cands[Math.floor(Math.random()*cands.length)];
     newDays.push({dayOfWeek:dayIdx,dishId:chosen.id,isLocked:false});
