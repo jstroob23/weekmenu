@@ -161,7 +161,7 @@ button{cursor:pointer;border:none;background:none}
 <body>
 <div id="root"></div>
 <script>
-const APP_VERSION = '0.05';
+const APP_VERSION = '0.06';
 
 // ─── Supabase Config ────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
@@ -667,7 +667,7 @@ function renderDishes(){
 
   // Search bar
   h+=`<div class="search-wrap"><span class="search-icon">${icon('search',16,'#bbb')}</span>
-    <input class="search-bar" placeholder="Zoek op naam of ingrediënt..." value="${esc(state.dishSearch)}" oninput="setState({dishSearch:this.value})"></div>`;
+    <input id="dish-search" class="search-bar" placeholder="Zoek op naam of ingrediënt..." value="${esc(state.dishSearch)}" oninput="setState({dishSearch:this.value})"></div>`;
 
   // Tag filter
   if(allTags.length){
@@ -958,6 +958,10 @@ function render(){
   // Restore focus and cursor position after re-render
   if(activeId){
     const el=document.getElementById(activeId);
+    if(el){el.focus();if(cursorPos!==null){try{el.setSelectionRange(cursorPos,cursorPos);}catch(e){}}}
+  } else if(activeTag==='INPUT'||activeTag==='TEXTAREA'){
+    // Geen id maar wel een input actief: herstel via class of autofocus
+    const el=document.querySelector('.search-bar:not([disabled]),.picker-search:not([disabled])');
     if(el){el.focus();if(cursorPos!==null){try{el.setSelectionRange(cursorPos,cursorPos);}catch(e){}}}
   }
 }
