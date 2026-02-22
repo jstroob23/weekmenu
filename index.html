@@ -162,8 +162,8 @@ button{cursor:pointer;border:none;background:none}
 <div id="root"></div>
 <script>
 // ─── Supabase Config ────────────────────────────────────────────────────────
-const SUPABASE_URL = 'https://vinhazunzttsrzwahbkl.supabase.co';   // bv. https://xxxx.supabase.co
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbmhhenVuenR0c3J6d2FoYmtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MTA1MTEsImV4cCI6MjA4NzI4NjUxMX0.jbr6YfC8wRYAdspXAePTvTjaYWLWtKTEzY6KI5lBVKQ';      // anon public key
+const SUPABASE_URL = 'JOUW_SUPABASE_URL';   // bv. https://xxxx.supabase.co
+const SUPABASE_ANON = 'JOUW_ANON_KEY';      // anon public key
 
 // ─── Supabase Client (lightweight, geen SDK nodig) ──────────────────────────
 const sb = {
@@ -187,24 +187,53 @@ const sb = {
     } catch(e) { return false; }
   },
   subscribe(onUpdate) {
-    // Realtime via WebSocket
-    const wsUrl = SUPABASE_URL.replace('https://', 'wss://').replace('http://', 'ws://') + '/realtime/v1/websocket?apikey=' + SUPABASE_ANON + '&vsn=1.0.0';
-    let ws, pingTimer;
+    // Realtime via WebSocket — Supabase Realtime v2 protocol
+    const wsUrl = SUPABASE_URL.replace('https://', 'wss://').replace('http://', 'ws://')
+      + '/realtime/v1/websocket?apikey=' + SUPABASE_ANON + '&vsn=1.0.0';
+    let ws, pingTimer, ref = 0;
+    function send(obj){ if(ws && ws.readyState===1) ws.send(JSON.stringify(obj)); }
     function connect() {
       try {
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
-          ws.send(JSON.stringify({ topic: 'realtime:public:app_state', event: 'phx_join', payload: {}, ref: '1' }));
-          pingTimer = setInterval(() => { if(ws.readyState===1) ws.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'})); }, 25000);
+          ref++;
+          // Subscribe op postgres_changes voor INSERT en UPDATE
+          send({
+            topic: 'realtime:public:app_state',
+            event: 'phx_join',
+            payload: {
+              config: {
+                broadcast: { self: false },
+                postgres_changes: [
+                  { event: 'INSERT', schema: 'public', table: 'app_state' },
+                  { event: 'UPDATE', schema: 'public', table: 'app_state' }
+                ]
+              }
+            },
+            ref: String(ref)
+          });
+          pingTimer = setInterval(() => {
+            ref++;
+            send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(ref) });
+          }, 25000);
         };
         ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
-            if (msg.event === 'INSERT' || msg.event === 'UPDATE') onUpdate(msg.payload?.record);
+            // Realtime v2: postgres_changes event, record in payload.data.record
+            if (msg.event === 'postgres_changes') {
+              const record = msg.payload?.data?.record;
+              if (record) onUpdate(record);
+            }
+            // Fallback voor oudere protocol
+            else if (msg.event === 'INSERT' || msg.event === 'UPDATE') {
+              const record = msg.payload?.record;
+              if (record) onUpdate(record);
+            }
           } catch(err) {}
         };
         ws.onclose = () => { clearInterval(pingTimer); setTimeout(connect, 5000); };
-        ws.onerror = () => { ws.close(); };
+        ws.onerror = () => { try{ ws.close(); }catch(e){} };
       } catch(e) {}
     }
     connect();
@@ -269,10 +298,11 @@ async function save(key,data){
 
 function setSyncStatus(s){
   syncStatus=s;
+  // Kleur direct updaten zonder volledige re-render (indicator is altijd in DOM)
+  const colors={'ok':'#81B29A','syncing':'#F2CC8F','offline':'#E07A5F'};
+  const labels={'ok':'Gesynchroniseerd','syncing':'Synchroniseren...','offline':'Offline (lokaal opgeslagen)'};
   const el=document.getElementById('sync-indicator');
   if(el){
-    const colors={'ok':'#81B29A','syncing':'#F2CC8F','offline':'#E07A5F'};
-    const labels={'ok':'Gesynchroniseerd','syncing':'Synchroniseren...','offline':'Offline (lokaal opgeslagen)'};
     el.style.background=colors[s]||'#bbb';
     el.title=labels[s]||s;
   }
@@ -874,7 +904,7 @@ function render(){
         <span class="header-emoji">🍳</span>
         <h1 class="header-title">Weekmenu</h1>
         <span class="header-week">Week ${getWeekNumber(new Date())}</span>
-        <div id="sync-indicator" title="Synchronisatiestatus" style="width:10px;height:10px;border-radius:50%;background:#bbb;flex-shrink:0;transition:background .4s"></div>
+        <div id="sync-indicator" title="${{'ok':'Gesynchroniseerd','syncing':'Synchroniseren...','offline':'Offline (lokaal opgeslagen)'}[syncStatus]||'Niet geconfigureerd'}" style="width:10px;height:10px;border-radius:50%;background:${{'ok':'#81B29A','syncing':'#F2CC8F','offline':'#E07A5F'}[syncStatus]||'#bbb'};flex-shrink:0;transition:background .4s"></div>
       </header>
       <main class="main">${content}</main>
       <nav class="nav">
